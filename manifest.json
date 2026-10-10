@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "逐字歌词",
+  "plugin_id": "word-by-word-lyric",
+  "version": "1.0.0",
+  "description": "逐字歌词：一个字填满颜色后才进下一个字，速度取自歌词文件的逐字时间轴。快慢可按歌曲单独微调（0.1 秒一步）。",
+  "moekoe": true,
+  "minversion": "1.7.0",
+  "author": {
+    "name": "SHIYI"
+  },
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "styles.css"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "icons": {
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
