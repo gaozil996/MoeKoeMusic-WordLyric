@@ -174,11 +174,6 @@
     applyUiZoom();
   }
 
-  function fontLabel() {
-    var f = LOOK.follow ? appFont() : '';
-    return f || '默认';
-  }
-
   function applyVars() {
     var r = document.documentElement;
     r.style.setProperty('--lyc-sung', CFG.sung);
@@ -530,37 +525,6 @@
      openSettingsPanel() went with them; nothing opened the panel by button
      any more.
   */
-
-  /* ============================================================
-     自适应可读性：按「实际背景亮度」决定要不要处理
-     ------------------------------------------------------------
-     判断依据是算出来的，不是拍脑袋：
-     · 菜单这类浮层的背景可能是浅色也可能是深色，
-       读它的 computed backgroundColor，合成到白底上算亮度，
-       亮就把文字改深，暗就保持原样。
-     · 歌词区不用管：.lyrics-screen 自带 #1616169c（60% 深灰遮罩），
-       歌词永远落在偏暗的背景上，粉字/浅灰字对比本来就够。
-       这是算出来的结论，不是省事。
-     ============================================================ */
-
-  function perceivedLuminance(cssColor) {
-    var m = /rgba?\(\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*(?:,\s*([\d.]+)\s*)?\)/.exec(cssColor || '');
-    if (!m) return -1;
-    var a = m[4] === undefined ? 1 : parseFloat(m[4]);
-    var lum = 0.2126 * parseFloat(m[1]) + 0.7152 * parseFloat(m[2]) + 0.0722 * parseFloat(m[3]);
-    // 半透明的要和它下面（白底）合成，算出眼睛实际看到的亮度
-    return lum * a + 255 * (1 - a);
-  }
-
-  function adaptMenus() {
-    var menus = document.querySelectorAll('.player-menu, .quality-menu, .speed-menu, .playback-mode-menu');
-    for (var i = 0; i < menus.length; i++) {
-      var el = menus[i];
-      var lum = perceivedLuminance(getComputedStyle(el).backgroundColor);
-      if (lum < 0) continue;
-      el.classList.toggle('lyc-on-light', lum > 140);
-    }
-  }
 
   /* ============================================================
      设置面板
@@ -975,9 +939,18 @@
     });
   }
 
-  // ============================================================
-  // 浅色浮层文字：按实际背景亮度决定要不要改色
-  // ============================================================
+  /* ============================================================
+     浅色浮层文字：按实际背景亮度决定要不要改色
+     ------------------------------------------------------------
+     判断依据是算出来的，不是拍脑袋：
+     · 菜单这类浮层的背景可能深可能浅，读它的 computed
+       backgroundColor，半透明的先和它下面（白底）合成，算出眼睛实际
+       看到的亮度，超过 140 就把文字改深。
+     · 歌词区不用走这条路：.lyrics-screen 自带 #1616169c（黑 61% 遮罩），
+       歌词永远落在偏暗的背景上，粉字/浅灰字对比本来就够。
+       这是算出来的结论，不是省事。歌词要描边的话是第 5b 节的开关，
+       那是给桌面歌词窗口的浅背景用的，跟这里不是一回事。
+     ============================================================ */
 
   function perceivedLuminance(cssColor) {
     var m = /rgba?\(\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*(?:,\s*([\d.]+)\s*)?\)/

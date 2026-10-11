@@ -63,21 +63,6 @@
   display: block;
 }
 
-/* 分组行：与 .settings-row 同构 */
-.lycx-row {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
-  margin-top: 10px;
-}
-
-.lycx-row > .lycx-lab {
-  font-size: 12px;
-  line-height: 1.3;
-  color: #ffffffb8;
-}
-
 /* 分段控件：与 .setting-options 同构 */
 .lycx-seg {
   display: flex;
