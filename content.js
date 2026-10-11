@@ -46,6 +46,13 @@
   // 所以做成开关：浅色背景上打开，深色背景上关掉。理由见 styles.css 第 5b 节。
   var STROKE = { on: false };
 
+  // 换行拖尾。应用给 .line-group 的字号动画加了 420ms 过渡，字号一动就必须
+  // 重新断行，所以同一句歌词在这段时间里会先按 1em 断一次、再按 1.25em 重断
+  // 一次 —— 看着就是「歌词到了、换行没跟上」。连同容器 600ms 的滑动和离开行
+  // 被钉到左上角留下的残影一起处理，理由写在 styles.css 第 7 节。
+  // 两个都默认开：要的就是没有拖尾，留着开关是想让人能换回去。
+  var FLOW = { nowrap: true, fast: true };
+
   function loadCfg() {
     try {
       var raw = localStorage.getItem(SET_KEY);
@@ -56,6 +63,8 @@
       if (o && o.fill !== undefined) FILL.on = !!o.fill;
       if (o && o.follow !== undefined) LOOK.follow = !!o.follow;
       if (o && o.stroke !== undefined) STROKE.on = !!o.stroke;
+      if (o && o.nowrap !== undefined) FLOW.nowrap = !!o.nowrap;
+      if (o && o.fast !== undefined) FLOW.fast = !!o.fast;
       // 「歌词字号」那个功能撤掉之前存进去的 size 是死数据，读都不读了，
       // 顺手抹掉，免得留在存储里一直误导人。
       if (o && o.size !== undefined) {
@@ -70,7 +79,8 @@
     try {
       localStorage.setItem(SET_KEY, JSON.stringify({
         sung: CFG.sung, unsung: CFG.unsung, fill: FILL.on,
-        follow: LOOK.follow, stroke: STROKE.on
+        follow: LOOK.follow, stroke: STROKE.on,
+        nowrap: FLOW.nowrap, fast: FLOW.fast
       }));
     } catch (e) {}
   }
@@ -164,6 +174,8 @@
       var o = JSON.parse(localStorage.getItem(SET_KEY) || '{}');
       if (o.follow !== undefined) LOOK.follow = !!o.follow;
       if (o.stroke !== undefined) STROKE.on = !!o.stroke;
+      if (o.nowrap !== undefined) FLOW.nowrap = !!o.nowrap;
+      if (o.fast !== undefined) FLOW.fast = !!o.fast;
     } catch (e) {}
   }
 
@@ -182,6 +194,12 @@
 
   function applyStroke() {
     document.documentElement.classList.toggle('lyc-stroke', STROKE.on);
+  }
+
+  function applyFlow() {
+    var r = document.documentElement;
+    r.classList.toggle('lyc-flow-nowrap', FLOW.nowrap);
+    r.classList.toggle('lyc-flow-fast', FLOW.fast);
   }
 
   // "rgba(227,227,227,.9)" -> "#e3e3e3"  (needed by <input type=color>)
@@ -783,6 +801,11 @@
 
       '<div class="lycx-sep"></div>' +
 
+      swRow('换行即时', FLOW.nowrap, 'nowrap') +
+      swRow('快速切行', FLOW.fast, 'fast') +
+
+      '<div class="lycx-sep"></div>' +
+
       '<div class="lycx-swrow"><span>歌词快慢</span>' +
       '<span class="lycx-num" data-num="off">' + fmtOff(off) + '</span></div>' +
       '<div class="lycx-seg">' +
@@ -860,6 +883,12 @@
           applyStroke();
           el.classList.toggle('on', STROKE.on);
           el.setAttribute('aria-pressed', STROKE.on ? 'true' : 'false');
+        } else if (key === 'nowrap' || key === 'fast') {
+          FLOW[key] = !FLOW[key];
+          saveCfg();
+          applyFlow();
+          el.classList.toggle('on', FLOW[key]);
+          el.setAttribute('aria-pressed', FLOW[key] ? 'true' : 'false');
         } else {
           FILL.on = !FILL.on;
           saveCfg();
@@ -982,6 +1011,7 @@
     // content script，所以这里每次都重新算一遍，别的窗口靠 CSS 变量同步。
     try { applyLyricLook(); } catch (e) { log('应用字体/缩放失败：' + (e && e.message)); }
     try { applyStroke(); } catch (e) { log('应用描边失败：' + (e && e.message)); }
+    try { applyFlow(); } catch (e) { log('应用换行设置失败：' + (e && e.message)); }
   }
 
   /* ============================================================
@@ -1027,6 +1057,7 @@
   loadCfg();
   applyVars();
   applyStroke();
+  applyFlow();
   applyLyricLook();
 
   if (document.readyState === 'loading') {

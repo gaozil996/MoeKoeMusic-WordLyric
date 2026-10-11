@@ -458,3 +458,42 @@ html.lyc-stroke .lyrics-text {
   padding: 3px 8px !important;
   border-radius: 11px !important;
 }
+
+/* ---------- 7. 歌词换行别拖尾 ----------
+
+   应用自己加了三处动画，叠在一起正好是「歌词已经到了、版式还没跟上」：
+
+   ① .line-group { transition: font-size .42s cubic-bezier(...) }
+      当前行是 .current-line-group，字号 1em -> 1.25em。字号是布局属性，
+      动它必然重排；而字一变宽就必须重新断行 —— 于是这 420ms 里同一句歌词
+      先按小字号断一次、再按大字号重断一次。换行跟不上就是这里。
+
+      同一行还挂着 will-change:font-size。font-size 不能合成，提升成图层
+      一分钱好处都没有，只是让每一行都多占一个层，重排更重。一起摘掉。
+
+      transition 只留 filter —— 当前行的 drop-shadow 是它本来的效果。
+
+   ② #lyrics { transition: transform .6s ease }
+      容器为了让当前行落在中间要滑 600ms。这期间新歌词已经画出来了，
+      位置却停在滑动的某一帧，看着就是没对齐。缩到 .18s：还能看出在动，
+      但不至于让人等。
+
+   ③ .single-lyric-fade-leave-active { position:absolute; top:0; left:0; right:0 }
+      离开中的行被钉到歌词块左上角，而不是它原本所在的那一行，于是淡出
+      的时候在别处留下一层残影。把淡出压到 80ms 就基本看不见了。
+
+   淡入那条（.22s）保留：它只动 opacity 和 transform，不碰排版，没有延迟。
+   ------------------------------------------------------------------ */
+
+html.lyc-flow-nowrap .line-group[data-v-6d845f81] {
+  transition: filter .32s ease !important;
+  will-change: auto !important;
+}
+
+html.lyc-flow-nowrap #lyrics[data-v-6d845f81] {
+  transition: transform .18s ease !important;
+}
+
+html.lyc-flow-fast .single-lyrics .single-lyric-fade-leave-active[data-v-6d845f81] {
+  transition: opacity .08s linear !important;
+}

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "逐字歌词",
   "plugin_id": "word-by-word-lyric",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "逐字歌词：一个字填满颜色后才进下一个字，速度取自歌词文件的逐字时间轴。快慢可按歌曲单独微调（0.1 秒一步）。",
   "moekoe": true,
   "minversion": "1.7.0",
