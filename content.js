@@ -41,6 +41,11 @@
 
   var FILL = { on: true };
 
+  // 歌词描边。桌面歌词窗口是 transparent:true 的无边框置顶窗，背后是桌面
+  // 本身，网页层读不到背后的像素 —— 按背景亮度自动判断这条路不存在，
+  // 所以做成开关：浅色背景上打开，深色背景上关掉。理由见 styles.css 第 5b 节。
+  var STROKE = { on: false };
+
   function loadCfg() {
     try {
       var raw = localStorage.getItem(SET_KEY);
@@ -50,6 +55,7 @@
       if (o && o.unsung) CFG.unsung = o.unsung;
       if (o && o.fill !== undefined) FILL.on = !!o.fill;
       if (o && o.follow !== undefined) LOOK.follow = !!o.follow;
+      if (o && o.stroke !== undefined) STROKE.on = !!o.stroke;
       // 「歌词字号」那个功能撤掉之前存进去的 size 是死数据，读都不读了，
       // 顺手抹掉，免得留在存储里一直误导人。
       if (o && o.size !== undefined) {
@@ -63,7 +69,8 @@
   function saveCfg() {
     try {
       localStorage.setItem(SET_KEY, JSON.stringify({
-        sung: CFG.sung, unsung: CFG.unsung, fill: FILL.on, follow: LOOK.follow
+        sung: CFG.sung, unsung: CFG.unsung, fill: FILL.on,
+        follow: LOOK.follow, stroke: STROKE.on
       }));
     } catch (e) {}
   }
@@ -156,6 +163,7 @@
     try {
       var o = JSON.parse(localStorage.getItem(SET_KEY) || '{}');
       if (o.follow !== undefined) LOOK.follow = !!o.follow;
+      if (o.stroke !== undefined) STROKE.on = !!o.stroke;
     } catch (e) {}
   }
 
@@ -175,6 +183,10 @@
     var r = document.documentElement;
     r.style.setProperty('--lyc-sung', CFG.sung);
     r.style.setProperty('--lyc-unsung', CFG.unsung);
+  }
+
+  function applyStroke() {
+    document.documentElement.classList.toggle('lyc-stroke', STROKE.on);
   }
 
   // "rgba(227,227,227,.9)" -> "#e3e3e3"  (needed by <input type=color>)
@@ -803,6 +815,7 @@
       swRow('逐字连续填充', FILL.on, 'fill') +
       swatchRow('已唱颜色', 'sung', SUNG_SWATCH, hexOf(CFG.sung, '#ff4d8d')) +
       swatchRow('未唱颜色', 'unsung', UNSUNG_SWATCH, hexOf(CFG.unsung, '#e8e8ec')) +
+      swRow('歌词描边', STROKE.on, 'stroke') +
 
       '<div class="lycx-sep"></div>' +
 
@@ -877,6 +890,12 @@
           writeViz(v);
           el.classList.toggle('on', v.on);
           el.setAttribute('aria-pressed', v.on ? 'true' : 'false');
+        } else if (key === 'stroke') {
+          STROKE.on = !STROKE.on;
+          saveCfg();
+          applyStroke();
+          el.classList.toggle('on', STROKE.on);
+          el.setAttribute('aria-pressed', STROKE.on ? 'true' : 'false');
         } else {
           FILL.on = !FILL.on;
           saveCfg();
@@ -989,6 +1008,7 @@
     // 应用设置是运行时可改的（设置页改完立刻生效），而两个窗口各自跑一份
     // content script，所以这里每次都重新算一遍，别的窗口靠 CSS 变量同步。
     try { applyLyricLook(); } catch (e) { log('应用字体/缩放失败：' + (e && e.message)); }
+    try { applyStroke(); } catch (e) { log('应用描边失败：' + (e && e.message)); }
   }
 
   /* ============================================================
@@ -1033,6 +1053,7 @@
 
   loadCfg();
   applyVars();
+  applyStroke();
   applyLyricLook();
 
   if (document.readyState === 'loading') {

@@ -404,6 +404,35 @@
 }
 
 
+/* ---------- 5b. 歌词描边（可关） ----------
+
+   全屏歌词页不用管：.lyrics-screen 自带 background:#1616169c（黑 61%），
+   合到纯白封面上实际亮度也只有 115，白字对比仍然够。
+
+   真正会糊的是桌面歌词窗口。那个窗口是 transparent:true 的无边框置顶窗
+   （appServices.js 的 createLyricsWindow），背后不是专辑图、是桌面本身 ——
+   可能是白底文档、浅色网页、浅色壁纸，压在上面的白字就看不见了。
+
+   按背景亮度自动决定这条��路走不通，而且不是懒：窗口透明，网页层读不到
+   背后的桌面像素，没有任何 API 能取到。所以做成开关，浅底时手动打开。
+
+   描边色必须显式写死。-webkit-text-stroke-color 的初始值是 currentcolor，
+   而这里的 .char 是 color:transparent（颜色全靠 background-clip:text 的
+   渐变画），跟着 currentcolor 的话描边也是透明的，等于什么都没画。
+
+   绝对不能碰 color —— 一动整行歌词消失（见上面第 2 节）。
+   ------------------------------------------------------------------ */
+
+html.lyc-stroke #lyrics .char,
+html.lyc-stroke #lyrics .line,
+html.lyc-stroke .lyrics-content,
+html.lyc-stroke .lyrics-layer,
+html.lyc-stroke .lyrics-text {
+  -webkit-text-stroke-width: 1px !important;
+  -webkit-text-stroke-color: rgba(0, 0, 0, .72) !important;
+}
+
+
 /* ---------- 6. 压在图上的控制条要垫一层底 ----------
 
    两处控制条是白色图标（.control-btn{color:#fff}）压在会变亮的背景上：
@@ -421,8 +450,9 @@
    0.64 的黑压纯白背景：0.64*16 + 0.36*255 ≈ 102，相对亮度约 0.13，
    白图标对比度 5.4:1（WCAG AA 门槛 4.5:1）。
 
-   刻意不加 text-shadow / drop-shadow。第 3 节记过为什么：主界面深底上
-   那圈黑影只会显脏。这里靠的是衬底，不是描边。
+   控制条这里刻意不加 text-shadow / drop-shadow：主界面是深底，那圈黑影
+   只会显脏。这里靠的是衬底。歌词文字要描边的话走第 5b 节的开关，
+   那是给桌面歌词窗口的浅色背景用的，跟这里不是一回事。
 
    类名连写两遍是为了压过应用自己的 .player-controls[data-v-...]（0,2,0），
    留一手免得哪天它也设了 background 就被比下去。
