@@ -46,12 +46,19 @@
   // 所以做成开关：浅色背景上打开，深色背景上关掉。理由见 styles.css 第 5b 节。
   var STROKE = { on: false };
 
-  // 换行拖尾。应用给 .line-group 的字号动画加了 420ms 过渡，字号一动就必须
-  // 重新断行，所以同一句歌词在这段时间里会先按 1em 断一次、再按 1.25em 重断
-  // 一次 —— 看着就是「歌词到了、换行没跟上」。连同容器 600ms 的滑动和离开行
-  // 被钉到左上角留下的残影一起处理，理由写在 styles.css 第 7 节。
-  // 两个都默认开：要的就是没有拖尾，留着开关是想让人能换回去。
-  var FLOW = { nowrap: true, fast: true };
+  // 换行动画。应用原本给 .line-group 的字号加了 .42s 过渡（还带 1.35 的过冲），
+  // 可它的 currentTime 是 throttle(…, 200) 节流过的 —— 420ms 的动画配 200ms
+  // 才动一次的时钟，动画永远在追，看着就是「歌词到了、版式没跟上」。
+  //
+  // 之前试过把字号那条过渡整个删掉，只留 filter 淡入：版式确实立刻就位了，
+  // 但字号变成硬跳，反而更生硬。所以反过来做 —— 过渡留着、压短、去掉过冲，
+  // 同时把当前行提前一点点亮，让放大的动画在真正开唱之前就演完。
+  // 具体参数和取舍写在 styles.css 第 7 节。
+  var FLOW = { soft: true };
+
+  // 提前点亮当前行的量（毫秒）。和 CSS 里 .24s 的过渡配套：
+  // 提前 260ms 起跳，歌词到点时动画正好收尾。
+  var LEAD_MS = 260;
 
   function loadCfg() {
     try {
@@ -63,8 +70,12 @@
       if (o && o.fill !== undefined) FILL.on = !!o.fill;
       if (o && o.follow !== undefined) LOOK.follow = !!o.follow;
       if (o && o.stroke !== undefined) STROKE.on = !!o.stroke;
-      if (o && o.nowrap !== undefined) FLOW.nowrap = !!o.nowrap;
-      if (o && o.fast !== undefined) FLOW.fast = !!o.fast;
+      if (o && o.soft !== undefined) FLOW.soft = !!o.soft;
+      // 1.1.0 的两个开关（换行即时 / 快速切行）在 1.2.0 合成了「柔和切行」。
+      // 读旧的存档，好让升级过来的用户别突然变回应用原本的 420ms 动画。
+      if (o && o.soft === undefined && (o.nowrap !== undefined || o.fast !== undefined)) {
+        FLOW.soft = !!(o.nowrap && o.fast);
+      }
       // 「歌词字号」那个功能撤掉之前存进去的 size 是死数据，读都不读了，
       // 顺手抹掉，免得留在存储里一直误导人。
       if (o && o.size !== undefined) {
@@ -79,8 +90,7 @@
     try {
       localStorage.setItem(SET_KEY, JSON.stringify({
         sung: CFG.sung, unsung: CFG.unsung, fill: FILL.on,
-        follow: LOOK.follow, stroke: STROKE.on,
-        nowrap: FLOW.nowrap, fast: FLOW.fast
+        follow: LOOK.follow, stroke: STROKE.on, soft: FLOW.soft
       }));
     } catch (e) {}
   }
@@ -174,8 +184,7 @@
       var o = JSON.parse(localStorage.getItem(SET_KEY) || '{}');
       if (o.follow !== undefined) LOOK.follow = !!o.follow;
       if (o.stroke !== undefined) STROKE.on = !!o.stroke;
-      if (o.nowrap !== undefined) FLOW.nowrap = !!o.nowrap;
-      if (o.fast !== undefined) FLOW.fast = !!o.fast;
+      if (o.soft !== undefined) FLOW.soft = !!o.soft;
     } catch (e) {}
   }
 
@@ -198,8 +207,8 @@
 
   function applyFlow() {
     var r = document.documentElement;
-    r.classList.toggle('lyc-flow-nowrap', FLOW.nowrap);
-    r.classList.toggle('lyc-flow-fast', FLOW.fast);
+    r.classList.toggle('lyc-flow-soft', FLOW.soft);
+    if (!FLOW.soft) dropLead();
   }
 
   // "rgba(227,227,227,.9)" -> "#e3e3e3"  (needed by <input type=color>)
@@ -517,10 +526,78 @@
 
   function reset() {
     var el = root();
+    dropLead();
     if (!el) return;
     el.classList.remove('lyc-word-on');
     var spans = el.querySelectorAll('.char[style*="--lyc-p"]');
     for (var i = 0; i < spans.length; i++) spans[i].style.removeProperty('--lyc-p');
+  }
+
+  /* ---------- 当前行提前点亮 ----------
+     应用的 currentLyricsLineIndex 是这么算的（PlayerControl.vue）：
+
+         currentTimeMs = currentTime.value * 1000
+         currentTimeMs >= firstChar.startTime && currentTimeMs < nextFirstChar.startTime
+
+     而 currentTime.value 来自 throttle(() => currentTime.value = audio.currentTime, 200)，
+     也就是最多 200ms 才动一次。我们要提前 LEAD_MS，就自己照这个判据算一遍，
+     再把 .current-line-group 挂到对应的 .line-group 上。
+
+     关键在于时间轴必须和应用完全一致 —— 同样用不含「歌词快慢」偏移的
+     currentSec()。等到歌词真正开始的那一刻，应用自己算出来也是这一行，
+     它那次赋值就是个空操作，CSS 过渡不会被重启，所以看不出抢过。
+     反过来要是这里再叠加用户设的偏移，两边就会各认一行、每 200ms 互相
+     抢一次，那才是真的卡 —— 也正是原先那句注释里「不能用
+     .current-line-group」的原因，只不过原因不是偏移本身，而是两边抢。 */
+
+  var leadAt = -2;     // -2 = 还没算过；-1 = 没有任何行是当前行
+
+  function dropLead() {
+    if (leadAt === -1) return;
+    leadAt = -1;
+    var el = root();
+    if (!el) return;
+    var groups = el.querySelectorAll('.line-group');
+    for (var i = 0; i < groups.length; i++) {
+      groups[i].classList.remove('current-line-group');
+    }
+  }
+
+  function paintLead() {
+    if (!FLOW.soft || !lyr.lines || !lyr.lines.length) return;
+
+    var n = lyr.lines.length;
+    var t = currentSec() * 1000 + LEAD_MS;
+
+    // 和应用同一套判据，只是时间往前挪了 LEAD_MS
+    var want = -1;
+    for (var i = 0; i < n; i++) {
+      var cs = lyr.lines[i].chars;
+      if (!cs.length) continue;
+      var next = -1;
+      for (var j = i + 1; j < n; j++) {
+        if (lyr.lines[j].chars.length) { next = lyr.lines[j].chars[0].s; break; }
+      }
+      if (t >= cs[0].s && (next < 0 || t < next)) { want = i; break; }
+    }
+    if (want === leadAt) return;
+
+    var el = root();
+    if (!el) return;
+    var groups = el.querySelectorAll('.line-group');
+    if (!groups.length) return;            // 歌词还没渲染出来，下一帧再试
+    var map = buildMap(groups);
+
+    var g = -1;
+    if (want >= 0) {
+      for (var k = 0; k < map.length; k++) if (map[k] === want) { g = k; break; }
+    }
+    for (var m = 0; m < groups.length; m++) {
+      // 目标那一行如果本来就有 class，就别摘了再补 —— 那样过渡会从头再演一次
+      if (m !== g) groups[m].classList.remove('current-line-group');
+    }
+    if (g >= 0) groups[g].classList.add('current-line-group');
+    leadAt = want;
   }
 
   /*
@@ -801,8 +878,7 @@
 
       '<div class="lycx-sep"></div>' +
 
-      swRow('换行即时', FLOW.nowrap, 'nowrap') +
-      swRow('快速切行', FLOW.fast, 'fast') +
+      swRow('柔和切行', FLOW.soft, 'soft') +
 
       '<div class="lycx-sep"></div>' +
 
@@ -883,12 +959,12 @@
           applyStroke();
           el.classList.toggle('on', STROKE.on);
           el.setAttribute('aria-pressed', STROKE.on ? 'true' : 'false');
-        } else if (key === 'nowrap' || key === 'fast') {
-          FLOW[key] = !FLOW[key];
+        } else if (key === 'soft') {
+          FLOW.soft = !FLOW.soft;
           saveCfg();
           applyFlow();
-          el.classList.toggle('on', FLOW[key]);
-          el.setAttribute('aria-pressed', FLOW[key] ? 'true' : 'false');
+          el.classList.toggle('on', FLOW.soft);
+          el.setAttribute('aria-pressed', FLOW.soft ? 'true' : 'false');
         } else {
           FILL.on = !FILL.on;
           saveCfg();
@@ -1046,6 +1122,7 @@
 
       if (n % 40 === 0) tickSettings();
 
+      paintLead();
       paint();
     } catch (e) {
       if (tickFails++ < 5) {

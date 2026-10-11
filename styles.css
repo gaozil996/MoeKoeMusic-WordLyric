@@ -398,7 +398,7 @@
    （appServices.js 的 createLyricsWindow），背后不是专辑图、是桌面本身 ——
    可能是白底文档、浅色网页、浅色壁纸，压在上面的白字就看不见了。
 
-   按背景亮度自动决定这条��路走不通，而且不是懒：窗口透明，网页层读不到
+   按背景亮度自动决定这条路走不通，而且不是懒：窗口透明，网页层读不到
    背后的桌面像素，没有任何 API 能取到。所以做成开关，浅底时手动打开。
 
    描边色必须显式写死。-webkit-text-stroke-color 的初始值是 currentcolor，
@@ -459,41 +459,55 @@ html.lyc-stroke .lyrics-text {
   border-radius: 11px !important;
 }
 
-/* ---------- 7. 歌词换行别拖尾 ----------
+/* ---------- 7. 换行动画：顺，但不能拖 ----------
 
    应用自己加了三处动画，叠在一起正好是「歌词已经到了、版式还没跟上」：
 
-   ① .line-group { transition: font-size .42s cubic-bezier(...) }
-      当前行是 .current-line-group，字号 1em -> 1.25em。字号是布局属性，
-      动它必然重排；而字一变宽就必须重新断行 —— 于是这 420ms 里同一句歌词
-      先按小字号断一次、再按大字号重断一次。换行跟不上就是这里。
+   -  PlayerControl.vue 里 currentTime.value = audio.currentTime 是
+      throttle(..., 200) 节流过的，最多 200ms 才动一次；而
+      .line-group { transition: font-size .42s cubic-bezier(.18,1.35,.28,1) }
+      要演 420ms。时钟 200ms 跳一格、动画 420ms 才走完，动画永远在追。
 
-      同一行还挂着 will-change:font-size。font-size 不能合成，提升成图层
-      一分钱好处都没有，只是让每一行都多占一个层，重排更重。一起摘掉。
+   -  同一行还挂着 will-change:font-size。font-size 不能合成，提升成
+      图层一分钱好处都没有，只是让每一行都多占一个层，重排更重。摘掉。
 
-      transition 只留 filter —— 当前行的 drop-shadow 是它本来的效果。
+   -  #lyrics { transition: transform .6s ease }
+      容器为了让当前行落在中间要滑 600ms。这期间新歌词已经画出来了，位置
+      却停在滑动的某一帧。
 
-   ② #lyrics { transition: transform .6s ease }
-      容器为了让当前行落在中间要滑 600ms。这期间新歌词已经画出来了，
-      位置却停在滑动的某一帧，看着就是没对齐。缩到 .18s：还能看出在动，
-      但不至于让人等。
+   -  .single-lyric-fade-leave-active { position:absolute; top:0; ... }
+      离开中的行被钉到歌词块左上角而不是它原本所在的那一行，淡出时在别处
+      留下一层残影。
 
-   ③ .single-lyric-fade-leave-active { position:absolute; top:0; left:0; right:0 }
-      离开中的行被钉到歌词块左上角，而不是它原本所在的那一行，于是淡出
-      的时候在别处留下一层残影。把淡出压到 80ms 就基本看不见了。
+   改法：
+
+   ① 字号动画留着 —— 删掉它字号就是硬跳，比拖尾更难看。压到 .24s，并把
+      cubic-bezier(.18,1.35,.28,1) 换成纯缓出的 (.22,.61,.36,1)。原来那个
+      1.35 是过冲：字号会先冲过 1.25em 再回落，而字号一动就要重新断行，
+      于是整段动画期间版式来回抖。换成单调的缓出就没有这个问题。
+
+   ② 光缩短还不够，再把当前行提前 260ms 点亮（content.js 的 LEAD_MS /
+      paintLead）。提前量按 .24s 的过渡配：起跳早 260ms，歌词到点时动画正好
+      收尾，看不出是提前切过去的。提前量刻意做小 —— 太大就会变成「抢唱」。
+
+   ③ 容器滑动 .6s -> .26s。提前点亮之后它也跟着提前，滑到位时不再有未完成的
+      位移，读起来是「镜头跟上了」而不是「还在追」。
+
+   ④ 离开行的残影还是压到 80ms（同一条 leave-active 规则，和上面无关）。
 
    淡入那条（.22s）保留：它只动 opacity 和 transform，不碰排版，没有延迟。
+   开关「柔和切行」关掉就是应用原本那套。
    ------------------------------------------------------------------ */
 
-html.lyc-flow-nowrap .line-group[data-v-6d845f81] {
-  transition: filter .32s ease !important;
+html.lyc-flow-soft .line-group[data-v-6d845f81] {
+  transition: font-size .24s cubic-bezier(.22, .61, .36, 1), filter .24s ease !important;
   will-change: auto !important;
 }
 
-html.lyc-flow-nowrap #lyrics[data-v-6d845f81] {
-  transition: transform .18s ease !important;
+html.lyc-flow-soft #lyrics[data-v-6d845f81] {
+  transition: transform .26s ease !important;
 }
 
-html.lyc-flow-fast .single-lyrics .single-lyric-fade-leave-active[data-v-6d845f81] {
+html.lyc-flow-soft .single-lyrics .single-lyric-fade-leave-active[data-v-6d845f81] {
   transition: opacity .08s linear !important;
 }
