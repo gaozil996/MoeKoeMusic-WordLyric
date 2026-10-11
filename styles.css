@@ -459,53 +459,56 @@ html.lyc-stroke .lyrics-text {
   border-radius: 11px !important;
 }
 
-/* ---------- 7. 换行动画：顺，但不能拖 ----------
+/* ---------- 7. 换行动画：两条要一起动 ----------
 
-   应用自己加了三处动画，叠在一起正好是「歌词已经到了、版式还没跟上」：
+   应用在全屏歌词页上有两条动画叠在一起：
 
-   -  PlayerControl.vue 里 currentTime.value = audio.currentTime 是
-      throttle(..., 200) 节流过的，最多 200ms 才动一次；而
-      .line-group { transition: font-size .42s cubic-bezier(.18,1.35,.28,1) }
-      要演 420ms。时钟 200ms 跳一格、动画 420ms 才走完，动画永远在追。
+   - .line-group { transition: font-size .42s cubic-bezier(.18,1.35,.28,1) }
+     当前行是 .current-line-group，字号 1em -> 1.25em。
+   - #lyrics { transition: transform .6s ease }
+     容器为了让当前行落在中间要滑 600ms。
 
-   -  同一行还挂着 will-change:font-size。font-size 不能合成，提升成
-      图层一分钱好处都没有，只是让每一行都多占一个层，重排更重。摘掉。
+   时钟是 throttle(..., 200) 节流过的，最多 200ms 才动一次，所以 420ms
+   和 600ms 两条动画永远追不上，看着就是「歌词到了、版式没跟上」。
 
-   -  #lyrics { transition: transform .6s ease }
-      容器为了让当前行落在中间要滑 600ms。这期间新歌词已经画出来了，位置
-      却停在滑动的某一帧。
+   还有一条容易踩的：这两条动画的先后是应用自己定的，不能拆开。
+   LyricsHandler.js 里 scrollToCurrentLine 是这么写的：
 
-   -  .single-lyric-fade-leave-active { position:absolute; top:0; ... }
-      离开中的行被钉到歌词块左上角而不是它原本所在的那一行，淡出时在别处
-      留下一层残影。
+       currentLineIndex = lineIndex;
+       // 当前行用 font-size 放大会改变各行高度，须等 DOM 应用放大后再测量，
+       // 否则用旧布局定位会偏移
+       nextTick(() => { ...scrollAmount.value = -lineElement.offsetTop + ... });
 
-   改法：
+   也就是说它本来就是「先让字号涨、下一帧再量位置滚动」，两条动画在同一个
+   tick 里起跑、彼此重叠。单独把 .current-line-group 提前挂上去只会把放大
+   甩到滚动前面 —— 行已经变大了却还停在旧位置，中间那几百毫秒读起来就是
+   「先放大、再滚上去」，慢一拍。这个坑踩过一次，撤回。
 
-   ① 字号动画留着 —— 删掉它字号就是硬跳，比拖尾更难看。压到 .24s，并把
-      cubic-bezier(.18,1.35,.28,1) 换成纯缓出的 (.22,.61,.36,1)。原来那个
-      1.35 是过冲：字号会先冲过 1.25em 再回落，而字号一动就要重新断行，
-      于是整段动画期间版式来回抖。换成单调的缓出就没有这个问题。
+   所以这里不去抢时钟，只把两条调成同一个时长、同一条曲线，让它们读起来
+   是一个动作而不是两下：
 
-   ② 光缩短还不够，再把当前行提前 260ms 点亮（content.js 的 LEAD_MS /
-      paintLead）。提前量按 .24s 的过渡配：起跳早 260ms，歌词到点时动画正好
-      收尾，看不出是提前切过去的。提前量刻意做小 —— 太大就会变成「抢唱」。
+   - 字号 .42s -> .22s，并且 cubic-bezier(.18,1.35,.28,1) -> (.22,.61,.36,1)。
+     原来那个 1.35 是过冲：字号冲过 1.25em 再回落，而字号一变宽就要重新断行，
+     整段动画期间版式来回抖。换单调缓出就没有这个来回。
+   - 容器 .6s -> .22s，和字号完全一致。两条同起同收，中间没有「涨完了还在
+     等滚动」的间隙。
+   - will-change:font-size 摘掉。font-size 不能合成，提升成图层一分钱好处都
+     没有，只是让每行多占一个层、重排更重。
+   - .single-lyric-fade-leave-active 的离开行淡出压到 80ms：离开中的行被钉在
+     歌词块左上角而不是它原本所在的那一行，淡出时在别处留下一层残影。
+     这条和上面两条无关，单行显示模式下才看得到。
 
-   ③ 容器滑动 .6s -> .26s。提前点亮之后它也跟着提前，滑到位时不再有未完成的
-      位移，读起来是「镜头跟上了」而不是「还在追」。
-
-   ④ 离开行的残影还是压到 80ms（同一条 leave-active 规则，和上面无关）。
-
-   淡入那条（.22s）保留：它只动 opacity 和 transform，不碰排版，没有延迟。
+   淡入那条（.22s）保留：它只动 opacity 和 transform，不碰排版，没有延迟可修。
    开关「柔和切行」关掉就是应用原本那套。
    ------------------------------------------------------------------ */
 
 html.lyc-flow-soft .line-group[data-v-6d845f81] {
-  transition: font-size .24s cubic-bezier(.22, .61, .36, 1), filter .24s ease !important;
+  transition: font-size .22s cubic-bezier(.22, .61, .36, 1), filter .22s cubic-bezier(.22, .61, .36, 1) !important;
   will-change: auto !important;
 }
 
 html.lyc-flow-soft #lyrics[data-v-6d845f81] {
-  transition: transform .26s ease !important;
+  transition: transform .22s cubic-bezier(.22, .61, .36, 1) !important;
 }
 
 html.lyc-flow-soft .single-lyrics .single-lyric-fade-leave-active[data-v-6d845f81] {

@@ -50,15 +50,16 @@
   // 可它的 currentTime 是 throttle(…, 200) 节流过的 —— 420ms 的动画配 200ms
   // 才动一次的时钟，动画永远在追，看着就是「歌词到了、版式没跟上」。
   //
-  // 之前试过把字号那条过渡整个删掉，只留 filter 淡入：版式确实立刻就位了，
-  // 但字号变成硬跳，反而更生硬。所以反过来做 —— 过渡留着、压短、去掉过冲，
-  // 同时把当前行提前一点点亮，让放大的动画在真正开唱之前就演完。
-  // 具体参数和取舍写在 styles.css 第 7 节。
+  // 注意这里不能靠「提前点亮当前行」来解决。应用自己的顺序（LyricsHandler.js）：
+  // highlightCurrentChar -> scrollToCurrentLine -> nextTick 里量 offsetTop，
+  // 注释写得很明白「当前行用 font-size 放大会改变各行高度，须等 DOM 应用放大后
+  // 再测量」。也就是它本来就是先涨后滚、两条动画在同一个 tick 里起跑、彼此重叠。
+  // 谁要是单独把 .current-line-group 提前挂上去，放大会跑到滚动前面去，中间
+  // 那段时间行已经变大了却还停在旧位置 —— 看着就是先放大再滚上去，慢一拍。
+  //
+  // 所以这里不去抢时钟，只把两条过渡调成同一个时长、同一条曲线，让它们读起来
+  // 是一个动作而不是两下。参数和取舍写在 styles.css 第 7 节。
   var FLOW = { soft: true };
-
-  // 提前点亮当前行的量（毫秒）。和 CSS 里 .24s 的过渡配套：
-  // 提前 260ms 起跳，歌词到点时动画正好收尾。
-  var LEAD_MS = 260;
 
   function loadCfg() {
     try {
@@ -208,7 +209,6 @@
   function applyFlow() {
     var r = document.documentElement;
     r.classList.toggle('lyc-flow-soft', FLOW.soft);
-    if (!FLOW.soft) dropLead();
   }
 
   // "rgba(227,227,227,.9)" -> "#e3e3e3"  (needed by <input type=color>)
@@ -526,78 +526,10 @@
 
   function reset() {
     var el = root();
-    dropLead();
     if (!el) return;
     el.classList.remove('lyc-word-on');
     var spans = el.querySelectorAll('.char[style*="--lyc-p"]');
     for (var i = 0; i < spans.length; i++) spans[i].style.removeProperty('--lyc-p');
-  }
-
-  /* ---------- 当前行提前点亮 ----------
-     应用的 currentLyricsLineIndex 是这么算的（PlayerControl.vue）：
-
-         currentTimeMs = currentTime.value * 1000
-         currentTimeMs >= firstChar.startTime && currentTimeMs < nextFirstChar.startTime
-
-     而 currentTime.value 来自 throttle(() => currentTime.value = audio.currentTime, 200)，
-     也就是最多 200ms 才动一次。我们要提前 LEAD_MS，就自己照这个判据算一遍，
-     再把 .current-line-group 挂到对应的 .line-group 上。
-
-     关键在于时间轴必须和应用完全一致 —— 同样用不含「歌词快慢」偏移的
-     currentSec()。等到歌词真正开始的那一刻，应用自己算出来也是这一行，
-     它那次赋值就是个空操作，CSS 过渡不会被重启，所以看不出抢过。
-     反过来要是这里再叠加用户设的偏移，两边就会各认一行、每 200ms 互相
-     抢一次，那才是真的卡 —— 也正是原先那句注释里「不能用
-     .current-line-group」的原因，只不过原因不是偏移本身，而是两边抢。 */
-
-  var leadAt = -2;     // -2 = 还没算过；-1 = 没有任何行是当前行
-
-  function dropLead() {
-    if (leadAt === -1) return;
-    leadAt = -1;
-    var el = root();
-    if (!el) return;
-    var groups = el.querySelectorAll('.line-group');
-    for (var i = 0; i < groups.length; i++) {
-      groups[i].classList.remove('current-line-group');
-    }
-  }
-
-  function paintLead() {
-    if (!FLOW.soft || !lyr.lines || !lyr.lines.length) return;
-
-    var n = lyr.lines.length;
-    var t = currentSec() * 1000 + LEAD_MS;
-
-    // 和应用同一套判据，只是时间往前挪了 LEAD_MS
-    var want = -1;
-    for (var i = 0; i < n; i++) {
-      var cs = lyr.lines[i].chars;
-      if (!cs.length) continue;
-      var next = -1;
-      for (var j = i + 1; j < n; j++) {
-        if (lyr.lines[j].chars.length) { next = lyr.lines[j].chars[0].s; break; }
-      }
-      if (t >= cs[0].s && (next < 0 || t < next)) { want = i; break; }
-    }
-    if (want === leadAt) return;
-
-    var el = root();
-    if (!el) return;
-    var groups = el.querySelectorAll('.line-group');
-    if (!groups.length) return;            // 歌词还没渲染出来，下一帧再试
-    var map = buildMap(groups);
-
-    var g = -1;
-    if (want >= 0) {
-      for (var k = 0; k < map.length; k++) if (map[k] === want) { g = k; break; }
-    }
-    for (var m = 0; m < groups.length; m++) {
-      // 目标那一行如果本来就有 class，就别摘了再补 —— 那样过渡会从头再演一次
-      if (m !== g) groups[m].classList.remove('current-line-group');
-    }
-    if (g >= 0) groups[g].classList.add('current-line-group');
-    leadAt = want;
   }
 
   /*
@@ -1122,7 +1054,6 @@
 
       if (n % 40 === 0) tickSettings();
 
-      paintLead();
       paint();
     } catch (e) {
       if (tickFails++ < 5) {
